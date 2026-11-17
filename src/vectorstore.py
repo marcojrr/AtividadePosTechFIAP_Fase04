@@ -26,7 +26,7 @@ def carregar_colecao(embeddings: Embeddings | None = None) -> Chroma:
         collection_name=COLECAO,
         embedding_function=embeddings,
         persist_directory=str(CHROMA_DIR),
-        collection_configuration={"hnsw": {"space": "cosine"}},
+        collection_metadata={"hnsw:space": "cosine"},
     )
 
 

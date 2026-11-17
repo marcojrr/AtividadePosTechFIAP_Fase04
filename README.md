@@ -77,7 +77,7 @@ A LLM **nunca vê** `review_id` nem `order_id`: recebe só identificadores curto
 | Banco vetorial | Chroma (local, persistente em disco), métrica de cosseno | Guarda vetor, texto e metadados juntos; integração com LangChain |
 | LLM | Google Gemini via API gratuita (padrão `gemini-3.5-flash-lite`, configurável) | Gratuito e com boa qualidade em português |
 | Dados | pandas + Parquet (pyarrow) | Preserva tipos e é rápido de recarregar |
-| Interface | Terminal da Máquina (CLI) | Simples para demonstrar o pipeline funcionando |
+| Interface | Streamlit (`app.py`) e terminal (CLI) | Streamlit: chat com evidências expansíveis, em Python puro. CLI: simples para depurar e demonstrar o pipeline |
 
 ## 4. Estrutura do repositório
 
@@ -101,9 +101,10 @@ A LLM **nunca vê** `review_id` nem `order_id`: recebe só identificadores curto
 ├── avaliacao/
 │   └── relatorio_avaliacao.md   # relatório gerado por `python -m src.avaliacao`
 ├── data/                        # não versionado: raw, processed, chroma, cache_llm
- requirements.txt
+├── app.py                       # interface web em Streamlit (chat com evidências)
+├── requirements.txt
 ├── README.md
-└── teste_ambiente.py            # Testando chamada a LLM (chave da API, modelo e resposta)
+└── teste_ambiente.py            # testa a chamada ao Gemini (chave da API, modelo e resposta)
 ```
 
 Notebooks, na ordem em que foram usados: `01_exploracao` (análise da base), `02_inspecao_embeddings` (vocabulário e cobertura do NILC), `03_teste_chroma` (índice contra busca exata), `04_analise_retrieval` (comparação das estratégias de busca), `05_teste_contexto`, `06_teste_geracao`, `07_calibracao_sem_evidencia` e `08_teste_ausencia_evidencias`.
@@ -300,7 +301,7 @@ Note que "Frete muito caro" aparece em 6 avaliações, com notas de 1 a 5: a **n
 | Rastreabilidade | Pedir à LLM que cite `review_id` | A LLM cita `E#`; o sistema guarda o mapa para os `review_id` reais |
 | Ausência de evidências | Só a LLM; só um limiar de similaridade | Quatro camadas, com motivo registrado em cada recusa |
 | LLM | Ollama local | Gemini (API gratuita). Em testes, o `gemini-3.6-flash` esgotou a cota diária (20 chamadas); trocamos para um modelo Flash-Lite, configurável no `.env`, e adicionamos cache em disco |
-| Interface | Streamlit; Gradio | Terminal: o mínimo para demonstrar o pipeline |
+| Interface | Terminal; Streamlit; Gradio | Streamlit, em Python puro e com componentes de chat prontos. O `app.py` só chama `responder()` do `pipeline.py`, sem alterar o pipeline. A CLI foi mantida |
 
 ## 11. Limitações e trabalho futuro
 
@@ -321,15 +322,14 @@ Note que "Frete muito caro" aparece em 6 avaliações, com notas de 1 a 5: a **n
 - Média de vetores ponderada por IDF e MMR na busca.
 - Filtros por nota e período.
 - Conjunto de avaliação maior, com repetição de rodadas.
-- Interface de uso.
 
 ## 12. Instalação e execução
 
 Requisitos: Python 3.11, uma chave da API do Gemini e cerca de 2 GB livres em disco (o modelo NILC tem ~1,1 GB).
 
 ```bash
-git clone <url-do-repositório>
-cd tech-challenge-fase4
+git clone https://github.com/marcojrr/AtividadePosTechFIAP_Fase04.git
+cd AtividadePosTechFIAP_Fase04
 python -m venv venv
 
 # Windows (PowerShell)
@@ -339,6 +339,8 @@ venv\Scripts\Activate.ps1
 
 pip install -r requirements.txt
 ```
+
+> **Versões fixadas.** O `requirements.txt` fixa `pyarrow==21.0.0` e um `langchain-chroma` abaixo da 1.0. Em um teste no Windows, com `pyarrow` 18.1.0 o processo encerrou com *access violation* ao inserir os dados no Chroma, sem mensagem de erro do Python; com a 21.0.0 a indexação funcionou. Já as versões do `langchain-chroma` a partir da 0.2.5 conflitam com o `langchain==0.3.7`. Por compatibilidade com a versão fixada, `src/vectorstore.py` define a métrica de cosseno por `collection_metadata={"hnsw:space": "cosine"}`.
 
 ### Dados
 
@@ -365,7 +367,7 @@ Para conferir se o modelo e a chave funcionam (gasta 1 chamada): `python -m src.
 ### Execução
 
 ```bash
-python -m src.data_processing     # limpeza → data/processed/reviews_clean.parquet (40.482 avaliações)
+python -m src.processa_base_final # limpeza → data/processed/base_limpa_final.parquet (40.482 avaliações)
 python -m src.embeddings          # embeddings → embeddings.npy + reviews_indexed.parquet (40.393); baixa o NILC na 1ª vez
 python -m src.vectorstore         # índice Chroma → data/chroma
 python -W ignore -m src.cli --detalhes   # interface em terminal ("sair" encerra)
@@ -373,6 +375,14 @@ python -m src.avaliacao           # avaliação → avaliacao/relatorio_avaliaca
 ```
 
 A opção `--detalhes` mostra também a similaridade da pergunta com a base, as buscas geradas pelo Gemini e as evidências recuperadas que não foram citadas. O `-W ignore` esconde avisos de versão de bibliotecas.
+
+### Interface web (Streamlit)
+
+```bash
+streamlit run app.py
+```
+
+O navegador abre em `http://localhost:8501`. Rode sempre da raiz do projeto, porque o pipeline usa caminhos relativos. O primeiro carregamento leva alguns segundos: o modelo NILC e o índice Chroma são carregados uma única vez. Na interface, cada resposta traz citações `[E#]`, e as avaliações citadas aparecem em blocos expansíveis, com nota e `review_id`. Recusas aparecem com o motivo. A chave **Mostrar detalhes técnicos**, na barra lateral, equivale ao `--detalhes` da CLI.
 
 ### Reprodutibilidade e cota
 
